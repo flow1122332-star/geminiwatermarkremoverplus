@@ -1,8 +1,5 @@
 /**
  * Gemini Watermark Remover — Browser with OpenCV.js
- *
- * Uses OpenCV inpainting (cv.inpaint TELEA) on the bottom-right corner
- * where Gemini places its 4-pointed star watermark.
  */
 
 const fileInput = document.getElementById('fileInput');
@@ -17,13 +14,9 @@ const errorEl = document.getElementById('error');
 let processedUrl = null;
 let cvReady = false;
 
-// Called by opencv.js onload
 window.onOpenCvReady = function () {
   cvReady = true;
   console.log('OpenCV.js loaded');
-  if (statusEl && statusEl.textContent === 'Loading OpenCV...') {
-    statusEl.textContent = '';
-  }
 };
 
 function waitForOpenCV(timeoutMs = 30000) {
@@ -35,7 +28,7 @@ function waitForOpenCV(timeoutMs = 30000) {
         return resolve();
       }
       if (Date.now() - start > timeoutMs) {
-        return reject(new Error('OpenCV.js failed to load. Check your internet connection.'));
+        return reject(new Error('OpenCV.js failed to load.'));
       }
       setTimeout(check, 150);
     };
@@ -67,14 +60,13 @@ async function processImage(img) {
   ctx.drawImage(img, 0, 0);
 
   const imageData = ctx.getImageData(0, 0, W, H);
-
   const src = cv.matFromImageData(imageData);
 
-  // Watermark region — Gemini style: bottom-right with ~32px margin
+  // AGGRESSIVE: cover bigger area, corner-anchored
   const maxDim = Math.max(W, H);
-  const baseSize = maxDim > 1024 ? 96 : 48;
-  const size = Math.round(baseSize * 1.4);
-  const margin = 24;
+  const baseSize = maxDim > 1024 ? 140 : 70;
+  const size = Math.round(baseSize * 1.5);
+  const margin = 0;
 
   const x1 = Math.max(0, W - size - margin);
   const y1 = Math.max(0, H - size - margin);
@@ -83,24 +75,25 @@ async function processImage(img) {
 
   if (rectW <= 0 || rectH <= 0) {
     src.delete();
-    throw new Error('Image too small to process.');
+    throw new Error('Image too small.');
   }
 
-  // Build mask (image sized) — white where watermark is
   const mask = cv.Mat.zeros(H, W, cv.CV_8UC1);
   const roi = mask.roi(new cv.Rect(x1, y1, rectW, rectH));
   roi.setTo(new cv.Scalar(255));
   roi.delete();
 
-  // Soften mask edges so inpaint blends smoothly
-  cv.GaussianBlur(mask, mask, new cv.Size(0, 0), 3, 3, cv.BORDER_DEFAULT);
+  cv.GaussianBlur(mask, mask, new cv.Size(0, 0), 5, 5, cv.BORDER_DEFAULT);
 
-  // Real inpainting
   const dst = new cv.Mat();
-  cv.inpaint(src, mask, dst, 5, cv.INPAINT_TELEA);
+  cv.inpaint(src, mask, dst, 10, cv.INPAINT_TELEA);
 
-  // Render result to canvas
+  // DEBUG: draw red rect on result so we can see the region
   cv.imshow(canvas, dst);
+  const debugCtx = canvas.getContext('2d');
+  debugCtx.strokeStyle = 'red';
+  debugCtx.lineWidth = 3;
+  debugCtx.strokeRect(x1, y1, rectW, rectH);
 
   src.delete();
   mask.delete();
@@ -123,28 +116,18 @@ fileInput.addEventListener('change', () => {
   img.onload = () => {
     previewOriginal.src = url;
     previewOriginal.hidden = false;
-
-    if (!cvReady) {
-      statusEl.textContent = 'Loading OpenCV...';
-    } else {
-      statusEl.textContent = 'Removing watermark...';
-    }
+    statusEl.textContent = cvReady ? 'Processing...' : 'Loading OpenCV...';
 
     setTimeout(async () => {
       try {
         const blob = await processImage(img);
-        if (!blob) {
-          errorEl.textContent = 'Failed to export image.';
-          statusEl.textContent = '';
-          return;
-        }
         if (processedUrl) URL.revokeObjectURL(processedUrl);
         processedUrl = URL.createObjectURL(blob);
         previewProcessed.src = processedUrl;
         previewProcessed.hidden = false;
         downloadBtn.href = processedUrl;
         downloadBtn.hidden = false;
-        statusEl.textContent = 'Done! Click download below.';
+        statusEl.textContent = 'Done!';
       } catch (err) {
         errorEl.textContent = 'Error: ' + err.message;
         statusEl.textContent = '';
@@ -152,18 +135,12 @@ fileInput.addEventListener('change', () => {
       }
     }, 50);
   };
-  img.onerror = () => {
-    errorEl.textContent = 'Could not load image.';
-  };
   img.src = url;
 });
 
 // Drag & drop
 ['dragenter', 'dragover', 'dragleave', 'drop'].forEach((evt) => {
-  uploadBox.addEventListener(evt, (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-  });
+  uploadBox.addEventListener(evt, (e) => { e.preventDefault(); e.stopPropagation(); });
 });
 ['dragenter', 'dragover'].forEach((evt) => {
   uploadBox.addEventListener(evt, () => uploadBox.classList.add('dragover'));
