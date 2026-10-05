@@ -2,13 +2,10 @@
  * Gemini Watermark Remover — Reverse Alpha Blending
  *
  * Uses actual Gemini alpha maps (assets/bg_48.png, assets/bg_96.png)
- * to mathematically reverse the watermark blend and recover original pixels.
- *
  * Formula: original = (watermarked - alpha * logo) / (1 - alpha)
  *
- * Handles TWO watermarks:
- *  - PASS 1: Standard small star (chhota) — aggressive removal
- *  - PASS 2: Large faint ghost star (bada) — soft removal
+ * Removes ONLY the standard small star watermark at bottom-right corner.
+ * (Ghost / large watermark is left untouched intentionally.)
  */
 
 const fileInput = document.getElementById('fileInput');
@@ -21,8 +18,6 @@ const statusEl = document.getElementById('status');
 const errorEl = document.getElementById('error');
 
 let processedUrl = null;
-
-// Cache alpha maps (Float32Array, 0..1)
 const alphaCache = {};
 
 function resetUI() {
@@ -36,13 +31,11 @@ function resetUI() {
   }
 }
 
-/**
- * Load a PNG alpha map and convert to Float32Array of per-pixel opacity.
- */
 async function loadAlphaMap(size) {
   if (alphaCache[size]) return alphaCache[size];
 
   const path = size === 48 ? 'assets/bg_48.png' : 'assets/bg_96.png';
+  console.log('[AlphaMap] Loading:', path);
 
   const img = await new Promise((resolve, reject) => {
     const i = new Image();
@@ -60,40 +53,22 @@ async function loadAlphaMap(size) {
   const data = ctx.getImageData(0, 0, size, size).data;
 
   const alpha = new Float32Array(size * size);
+  let maxA = 0;
   for (let i = 0, p = 0; i < alpha.length; i++, p += 4) {
     const v = Math.max(data[p], data[p + 1], data[p + 2]) / 255;
     alpha[i] = v;
+    if (v > maxA) maxA = v;
   }
+  console.log('[AlphaMap] Loaded size=' + size + ' maxAlpha=' + maxA.toFixed(3));
 
   alphaCache[size] = alpha;
   return alpha;
 }
 
-/**
- * Scale alpha map from old size to new size (nearest-neighbor).
- */
-function scaleAlphaMap(alpha, oldSize, newSize) {
-  const scaled = new Float32Array(newSize * newSize);
-  for (let y = 0; y < newSize; y++) {
-    for (let x = 0; x < newSize; x++) {
-      const srcX = Math.floor(x * oldSize / newSize);
-      const srcY = Math.floor(y * oldSize / newSize);
-      scaled[y * newSize + x] = alpha[srcY * oldSize + srcX];
-    }
-  }
-  return scaled;
-}
-
-/**
- * Apply reverse alpha blending over the watermark region.
- * original = (watermarked - alpha * logo) / (1 - alpha)
- *
- * strength: multiplier on alpha (1.0 = normal, >1 = aggressive, <1 = soft)
- */
 function reverseAlphaBlend(imageData, W, H, x1, y1, size, alpha, strength) {
   const data = imageData.data;
   const eps = 1e-4;
-  const logo = 1.0; // white watermark
+  const logo = 1.0;
   const scale = strength || 1.0;
 
   for (let ly = 0; ly < size; ly++) {
@@ -104,8 +79,8 @@ function reverseAlphaBlend(imageData, W, H, x1, y1, size, alpha, strength) {
       if (x < 0 || x >= W) continue;
 
       let a = alpha[ly * size + lx] * scale;
-      if (a < 0.01) continue;
-      if (a > 0.95) a = 0.95; // clamp to avoid blow-out
+      if (a < 0.005) continue;
+      if (a > 0.98) a = 0.98;
 
       const idx = (y * W + x) * 4;
       const denom = 1 - a + eps;
@@ -122,6 +97,7 @@ function reverseAlphaBlend(imageData, W, H, x1, y1, size, alpha, strength) {
 async function processImage(img) {
   const W = img.naturalWidth;
   const H = img.naturalHeight;
+  console.log('[Process] Size: ' + W + 'x' + H);
 
   const canvas = document.createElement('canvas');
   canvas.width = W;
@@ -130,45 +106,22 @@ async function processImage(img) {
   ctx.drawImage(img, 0, 0);
 
   const imageData = ctx.getImageData(0, 0, W, H);
+
+  // Standard Gemini watermark size
   const maxDim = Math.max(W, H);
   const stdSize = maxDim > 1024 ? 96 : 48;
 
-  // --- PASS 1: Standard Gemini watermark (chhota, aggressive) ---
-  const stdMargin = 24;
-  const stdBoost = 1.6;
-  const stdSizeBoost = 1.3;
+  // Position: bottom-right corner with 32px margin
+  const margin = 32;
+  const x1 = W - stdSize - margin;
+  const y1 = H - stdSize - margin;
 
-  const stdApplied = Math.round(stdSize * stdSizeBoost);
-  const sx1 = W - stdApplied - stdMargin;
-  const sy1 = H - stdApplied - stdMargin;
+  console.log('[Process] Region: x1=' + x1 + ' y1=' + y1 + ' size=' + stdSize);
 
-  if (sx1 >= 0 && sy1 >= 0) {
-    try {
-      const baseAlpha = await loadAlphaMap(stdSize);
-      const scaledAlpha = scaleAlphaMap(baseAlpha, stdSize, stdApplied);
-      // Aggressive pass
-      reverseAlphaBlend(imageData, W, H, sx1, sy1, stdApplied, scaledAlpha, stdBoost);
-      // Soft cleanup pass to remove residual ghost
-      reverseAlphaBlend(imageData, W, H, sx1, sy1, stdApplied, scaledAlpha, 0.8);
-    } catch (e) {
-      console.warn('Pass 1 (standard) failed:', e.message);
-    }
-  }
-
-  // --- PASS 2: Large faint ghost watermark (bada) ---
-  const largeSize = maxDim > 1024 ? 220 : 110;
-  const largeMargin = 0;
-  const lx1 = W - largeSize - largeMargin;
-  const ly1 = H - largeSize - largeMargin;
-
-  if (lx1 >= 0 && ly1 >= 0) {
-    try {
-      const baseAlpha = await loadAlphaMap(stdSize);
-      const scaledAlpha = scaleAlphaMap(baseAlpha, stdSize, largeSize);
-      reverseAlphaBlend(imageData, W, H, lx1, ly1, largeSize, scaledAlpha, 0.7);
-    } catch (e) {
-      console.warn('Pass 2 (ghost) failed:', e.message);
-    }
+  if (x1 >= 0 && y1 >= 0) {
+    const alpha = await loadAlphaMap(stdSize);
+    // Single clean pass
+    reverseAlphaBlend(imageData, W, H, x1, y1, stdSize, alpha, 1.0);
   }
 
   ctx.putImageData(imageData, 0, 0);
