@@ -7,8 +7,8 @@
  * Formula: original = (watermarked - alpha * logo) / (1 - alpha)
  *
  * Handles TWO watermarks:
- *  - Standard small star at bottom-right (48x48 or 96x96, 32px margin)
- *  - Large faint ghost star (200x200 or 100x100, 5px margin)
+ *  - PASS 1: Standard small star (chhota) — aggressive removal
+ *  - PASS 2: Large faint ghost star (bada) — soft removal
  */
 
 const fileInput = document.getElementById('fileInput');
@@ -87,6 +87,8 @@ function scaleAlphaMap(alpha, oldSize, newSize) {
 /**
  * Apply reverse alpha blending over the watermark region.
  * original = (watermarked - alpha * logo) / (1 - alpha)
+ *
+ * strength: multiplier on alpha (1.0 = normal, >1 = aggressive, <1 = soft)
  */
 function reverseAlphaBlend(imageData, W, H, x1, y1, size, alpha, strength) {
   const data = imageData.data;
@@ -101,8 +103,9 @@ function reverseAlphaBlend(imageData, W, H, x1, y1, size, alpha, strength) {
       const x = x1 + lx;
       if (x < 0 || x >= W) continue;
 
-      const a = alpha[ly * size + lx] * scale;
+      let a = alpha[ly * size + lx] * scale;
       if (a < 0.01) continue;
+      if (a > 0.95) a = 0.95; // clamp to avoid blow-out
 
       const idx = (y * W + x) * 4;
       const denom = 1 - a + eps;
@@ -130,21 +133,29 @@ async function processImage(img) {
   const maxDim = Math.max(W, H);
   const stdSize = maxDim > 1024 ? 96 : 48;
 
-  // --- PASS 1: Standard Gemini watermark (chhota, bottom-right corner) ---
-  const stdMargin = 32;
-  const sx1 = W - stdSize - stdMargin;
-  const sy1 = H - stdSize - stdMargin;
+  // --- PASS 1: Standard Gemini watermark (chhota, aggressive) ---
+  const stdMargin = 24;
+  const stdBoost = 1.6;
+  const stdSizeBoost = 1.3;
+
+  const stdApplied = Math.round(stdSize * stdSizeBoost);
+  const sx1 = W - stdApplied - stdMargin;
+  const sy1 = H - stdApplied - stdMargin;
 
   if (sx1 >= 0 && sy1 >= 0) {
     try {
-      const stdAlpha = await loadAlphaMap(stdSize);
-      reverseAlphaBlend(imageData, W, H, sx1, sy1, stdSize, stdAlpha, 1.0);
+      const baseAlpha = await loadAlphaMap(stdSize);
+      const scaledAlpha = scaleAlphaMap(baseAlpha, stdSize, stdApplied);
+      // Aggressive pass
+      reverseAlphaBlend(imageData, W, H, sx1, sy1, stdApplied, scaledAlpha, stdBoost);
+      // Soft cleanup pass to remove residual ghost
+      reverseAlphaBlend(imageData, W, H, sx1, sy1, stdApplied, scaledAlpha, 0.8);
     } catch (e) {
       console.warn('Pass 1 (standard) failed:', e.message);
     }
   }
 
-  // --- PASS 2: Large faint ghost watermark ---
+  // --- PASS 2: Large faint ghost watermark (bada) ---
   const largeSize = maxDim > 1024 ? 220 : 110;
   const largeMargin = 0;
   const lx1 = W - largeSize - largeMargin;
@@ -154,7 +165,6 @@ async function processImage(img) {
     try {
       const baseAlpha = await loadAlphaMap(stdSize);
       const scaledAlpha = scaleAlphaMap(baseAlpha, stdSize, largeSize);
-      // Lower strength because ghost is fainter (~0.7x of standard)
       reverseAlphaBlend(imageData, W, H, lx1, ly1, largeSize, scaledAlpha, 0.7);
     } catch (e) {
       console.warn('Pass 2 (ghost) failed:', e.message);
