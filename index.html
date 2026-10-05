@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gemini Watermark Remover</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand-name">Gemini Watermark Remover</div>
+</header>
+
+<main class="page-content">
+  <nav class="breadcrumb">
+    <a href="/">Home</a>
+    <span>›</span>
+    <span>Watermark Remover</span>
+  </nav>
+
+  <section class="tool-section">
+    <div class="hero-copy">
+      <h1>Free Gemini Watermark Remover</h1>
+      <p>Remove Gemini watermark instantly. 100% private — files never leave your device.</p>
+    </div>
+
+    <div class="upload-box" id="uploadBox">
+      <input id="fileInput" type="file" accept="image/*" hidden>
+      <div class="upload-content">
+        <div class="upload-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+            <polyline points="17 8 12 3 7 8"/>
+            <line x1="12" y1="3" x2="12" y2="15"/>
+          </svg>
+        </div>
+        <h2>Upload your image</h2>
+        <label for="fileInput" class="choose-button">Choose File</label>
+        <p class="drop-hint">or drag &amp; drop here</p>
+        <p class="supported-formats">JPG · PNG · WEBP</p>
+        <p id="fileName" class="file-name"></p>
+
+        <img id="previewOriginal" class="preview" hidden>
+        <img id="previewProcessed" class="preview" hidden>
+
+        <p id="status" class="status"></p>
+        <p id="error" class="error"></p>
+
+        <a id="downloadBtn" class="choose-button" hidden download="gemini-cleaned.png">Download Cleaned Image</a>
+      </div>
+    </div>
+
+    <p class="privacy-note">🔒 100% private — processing happens in your browser</p>
+  </section>
+
+  <section class="steps-section">
+    <h2>How it works</h2>
+    <ol class="steps-list">
+      <li><strong>01 Upload</strong><span>Choose an image with a Gemini watermark</span></li>
+      <li><strong>02 Process</strong><span>Watermark removed instantly in your browser</span></li>
+      <li><strong>03 Download</strong><span>Save the cleaned image</span></li>
+    </ol>
+  </section>
+
+  <section class="faq-section">
+    <h2>FAQ</h2>
+    <details><summary>Is it private?</summary><p>Yes. Your image never leaves your device. All processing is done in your browser.</p></details>
+    <details><summary>Which formats are supported?</summary><p>JPG, PNG, and WEBP.</p></details>
+    <details><summary>Is it free?</summary><p>Yes, completely free.</p></details>
+  </section>
+</main>
+
+<script src="main.js"></script>
+</body>
+</html>
