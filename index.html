@@ -41,8 +41,8 @@
         <p class="supported-formats">JPG · PNG · WEBP</p>
         <p id="fileName" class="file-name"></p>
 
-        <img id="previewOriginal" class="preview" hidden>
-        <img id="previewProcessed" class="preview" hidden>
+        <img id="previewOriginal" class="preview" hidden alt="Original">
+        <img id="previewProcessed" class="preview" hidden alt="Processed">
 
         <p id="status" class="status"></p>
         <p id="error" class="error"></p>
@@ -71,6 +71,7 @@
   </section>
 </main>
 
+<script async src="https://docs.opencv.org/4.10.0/opencv.js" onload="onOpenCvReady()"></script>
 <script src="main.js"></script>
 </body>
 </html>
